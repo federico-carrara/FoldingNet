@@ -171,11 +171,11 @@ class ModelNet40_train(data.Dataset):
                 point_clouds.append(np.array(data_file['data']))
                 labels.append(np.array(data_file['label']))
         self.point_clouds = np.concatenate(point_clouds, axis=0)
-        self.lbs = np.concatenate(labels, axis=0)
+        self.labels = np.concatenate(labels, axis=0)
     
     def __getitem__(self, index):
         point_cloud = self.point_clouds[index]
-        label = self.lbs[index]
+        label = self.labels[index]
         # classname = self.id2cat[label[0]]
 
         # select self.npoints from the original point cloud randomly
@@ -271,11 +271,11 @@ class ModelNet40_test(data.Dataset):
                 labels.append(np.array(data_file['label']))
 
         self.point_clouds = np.concatenate(point_clouds, axis=0)
-        self.lbs = np.concatenate(labels, axis=0)
+        self.labels = np.concatenate(labels, axis=0)
     
     def __getitem__(self, index):
         point_cloud = self.point_clouds[index]
-        label = self.lbs[index]
+        label = self.labels[index]
         # classname = self.id2cat[label[0]]
 
         # normalize into a sphere whose radius is 1
@@ -335,10 +335,9 @@ class ShapeNetCore_train(data.Dataset):
         self.normalize = normalize
         self.data_augmentation = data_augmentation
 
-        # load classname and class id
-        with open(os.path.join(self.root, "synsetID_to_category_shapenetcore.json"), 'r') as f:
-            self.id2cat = json.load(f)
-        self.cat2id = {v: k for k, v in self.id2cat.items()}
+        with open('misc/shapenetcorecategory2id.json', 'r') as f:
+            self.cat2id = json.load(f)
+        self.id2cat = {v: k for k, v in self.cat2id.items()}
 
         # find all .h5 files
         data_files = [file_name for file_name in os.listdir(self.root) if 'train' in file_name]
@@ -349,15 +348,15 @@ class ShapeNetCore_train(data.Dataset):
         for data_path in data_paths:
             with h5py.File(data_path, 'r') as data_file:
                 point_clouds.append(np.array(data_file['point_clouds']))
-                labels.append(np.array(data_file['categories']))
+                labels.append(np.array(data_file['categories']).squeeze(1))
         self.point_clouds = np.concatenate(point_clouds, axis=0)
         self.labels = np.concatenate(labels, axis=0)
     
     def __getitem__(self, index):
         point_cloud = self.point_clouds[index]
-        label = self.lbs[index]
-        label[0] = label[0].decode("utf-8")
-        # classname = [self.cat2id[label[0].decode("utf-8")]]
+        label = self.labels[index]
+        label = self.cat2id[label.decode()]
+        # classname = [self.cat2id[label[0].decode()]]
 
         # select self.npoints from the original point cloud
         choice = np.random.choice(len(point_cloud), self.npoints, replace=False)
@@ -377,7 +376,7 @@ class ShapeNetCore_train(data.Dataset):
             point_cloud += np.random.normal(0, 0.02, size=point_cloud.shape)  # random jitter
         
         point_cloud = torch.from_numpy(point_cloud)
-        label = torch.from_numpy(label)
+        label = torch.tensor(label)
 
         return point_cloud, label
 
@@ -425,10 +424,9 @@ class ShapeNetCore_test(data.Dataset):
         self.split = split
         self.normalize = normalize
 
-        # load classname and class id
-        with open(os.path.join(self.root, "synsetID_to_category_shapenetcore.json"), 'r') as f:
-            self.id2cat = json.load(f)
-        self.cat2id = {v: k for k, v in self.id2cat.items()}
+        with open('misc/shapenetcorecategory2id.json', 'r') as f:
+            self.cat2id = json.load(f)
+        self.id2cat = {v: k for k, v in self.cat2id.items()}
 
         # find all .h5 files
         data_files = [file_name for file_name in os.listdir(self.root) if self.split in file_name]
@@ -445,14 +443,14 @@ class ShapeNetCore_test(data.Dataset):
                     for pc in pcs
                 ]
                 point_clouds.append(np.asarray(pcs))
-                labels.append(np.array(data_file['categories']))
+                labels.append(np.array(data_file['categories']).squeeze(1))
         self.point_clouds = np.concatenate(point_clouds, axis=0)
         self.labels = np.concatenate(labels, axis=0)
     
     def __getitem__(self, index):
         point_cloud = self.point_clouds[index]
-        label = self.lbs[index]
-        label[0] = label[0].decode("utf-8")
+        label = self.labels[index]
+        label = self.cat2id[label.decode()]
         # classname = [self.cat2id[label[0].decode("utf-8")]]
 
         # normalize into a sphere whose radius is 1
@@ -462,7 +460,7 @@ class ShapeNetCore_test(data.Dataset):
             point_cloud = point_cloud / dist
         
         point_cloud = torch.from_numpy(point_cloud)
-        label = torch.from_numpy(label)
+        label = torch.tensor(label)
 
         return point_cloud, label
 
