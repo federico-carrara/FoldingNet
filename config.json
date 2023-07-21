@@ -1,13 +1,13 @@
 {
-    "root": "../data/ModelNet40/modelnet40_ply_hdf5_2048/",
+    "root": "../data/ShapeNet/ShapeNetCore_pointclouds_v2/",
     "npoints": 2048,
     "mpoints": 2025,
-    "batch_size": 16,
+    "batch_size": 4,
     "lr": 1e-4,
     "beta1": 0.9,
     "beta2": 0.99,
     "weight_decay": 1e-6,
-    "epochs": 1000,
+    "epochs": 400,
     "num_workers": 4,
     "log_dir": "./log"
 }
