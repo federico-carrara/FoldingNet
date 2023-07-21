@@ -438,14 +438,14 @@ class ShapeNetCore_test(data.Dataset):
         point_clouds, labels, synsetIds = [], [], []
         for data_path in data_paths:
             with h5py.File(data_path, 'r') as data_file:
-                pcs = np.array(data_file['data'])
+                pcs = np.array(data_file['point_clouds'])
                 # resample current point cloud to take npoints from each
                 pcs = [
                     pc[np.random.choice(len(pc), self.npoints, replace=False), :]
                     for pc in pcs
                 ]
                 point_clouds.append(np.asarray(pcs))
-                labels.append(np.array(data_file['label']))
+                labels.append(np.array(data_file['categories']))
         self.point_clouds = np.concatenate(point_clouds, axis=0)
         self.labels = np.concatenate(labels, axis=0)
     
