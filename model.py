@@ -308,8 +308,7 @@ class AutoEncoder(pl.LightningModule):
         '''
         Parameters:
         -----------
-        dataset_name:
-        dataset_name: (Literal['ModelNet40', 'ShapeNetCore'])
+            dataset_name: (Literal['ModelNet40', 'ShapeNetCore'])
             lr: (Optional[float] = 1e-4)
             betas: (Optional[List[float]] = [0.9, 0.99])
             weight_decay: (Optional[float] = 1e-6)

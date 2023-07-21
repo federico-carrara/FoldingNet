@@ -20,7 +20,7 @@ from make_plots import save_3d_plots, plot_samples
 
 #-------------------------------------------------------------------------------
 def evaluate_and_predict(
-        model: pl.LightningModule,
+        model: AutoEncoder,
         test_dataloader: torch.utils.data.DataLoader,
         metrics: Iterable[Callable],
         device: torch.device
@@ -31,11 +31,11 @@ def evaluate_and_predict(
     
     Parameters:
     ----------- 
-        model: (pl.LightningModule)
-            The pytorch model to be evaluated
+        model: (AutoEncoder)
+            The pytorch model AutoEncoder to be evaluated.
 
         test_dataloader: (torch.utils.data.DataLoader)
-            The test_dataset (torch Dataset object) which the model should be evaluated on 
+            The dataloader containing the dataset used to evaluate the model. 
         
         metrics: (Iterable[Callable])
             A list of nn.Module's corresponding to the metrics which the model should be 
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_dir', type=str, default="./lightning_logs/version_95/checkpoints/best_checkpoint.ckpt")
     parser.add_argument('--model_name', type=str, default="ModelNet40")
-    parser.add_argument('--data_root', type=str, default="../ModelNet40_data/modelnet40_ply_hdf5_2048/")
+    parser.add_argument('--data_root', type=str, default="../data/ModelNet40_data/modelnet40_ply_hdf5_2048/")
     args = parser.parse_args()
 
     main(
