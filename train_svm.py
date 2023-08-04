@@ -10,9 +10,8 @@ from sklearn.metrics import *
 import pytorch_lightning as pl
 from tqdm import tqdm
 from typing import (
-    Iterable, Optional, Callable, 
-    Union, List, Tuple, 
-    Dict, Literal, Callable
+    Optional, Callable, Union,
+    List, Tuple, Dict, Literal
 )
 from datasets import (
     ModelNet40_train,
@@ -21,7 +20,6 @@ from datasets import (
     ShapeNetCore_test
 )
 from model import AutoEncoder
-from utils import to_one_hots
 from train_utils import get_available_devices
 
 
@@ -70,60 +68,60 @@ def get_codewords(
     # Get data and let them through the Encoder
     codewords = []
     labels = []
+    categories = []
 
     with torch.no_grad():
         for data in tqdm(dataloader, desc='Getting codewords'):
-            point_clouds, lbls = data
+            point_clouds, lbls, cnames = data
             point_clouds = point_clouds.to(device)
             point_clouds = point_clouds.permute(0, 2, 1)
             bottleneck = autoencoder.encoder(point_clouds)
             codewords.append(bottleneck.cpu().numpy())
             labels.append(lbls)
+            categories.append(cnames)
 
     codewords = np.concatenate(codewords, axis=0)
     labels = np.concatenate(labels)
+    categories = np.concatenate(categories).reshape(-1, 1)
 
     if one_hot:
-        one = OneHotEncoder()
-        labels = one.fit(labels)       
+        one = OneHotEncoder(sparse_output=False)
+        categories = one.fit_transform(categories)       
 
-    return codewords, labels
+    return codewords, categories
+#-------------------------------------------------------------------------------
 
 
-def load_data(split='train', one_hot=False):
-    if one_hot:
-        x, y = np.load('data/{}_x.npy'.format(split)), np.load('data/{}_y_onehot.npy'.format(split))
+
+#-------------------------------------------------------------------------------
+def classify(
+    classifier: Literal['SVM'],
+    x_train: np.ndarray[float],
+    y_train: np.ndarray[float],
+    x_test: np.ndarray[float],
+    y_test: np.ndarray[float]
+) -> np.ndarray[float]:
+    
+    if classifier == 'SVM':
+        model = OneVsRestClassifier(svm.LinearSVC(random_state=0, verbose=0, max_iter=100000, dual="auto"))
     else:
-        x, y = np.load('data/{}_x.npy'.format(split)), np.load('data/{}_y.npy'.format(split))
-    return x, y
+        NotImplementedError
+    model.fit(x_train, y_train)
+
+    y_pred = model.predict(x_test)
+
+    print(confusion_matrix(y_test.argmax(axis=1), y_pred.argmax(axis=1)))
+
+    # print('Precision:', precision_score(y_test, y_pred, average='micro'))
+    # print('Recall:', recall_score(y_test, y_pred, average='micro'))
+    # print('F1 Score:', f1_score(y_test, y_pred, average='micro'))
+
+    print(classification_report(y_test, y_pred, digits=4, zero_division=np.nan))
+
+    return model
 
 
 if __name__ == '__main__':
-
-    # # data preprocessing
-    # train_x, train_y = load_data(split='train')
-    # test_x, test_y = load_data(split='test')
-    # train_y = label_binarize(train_y, classes=range(40))
-    # test_y = label_binarize(test_y, classes=range(40))
-    # print(train_x.shape, train_y.shape)
-    # print(test_x.shape, test_y.shape)
-
-    # model = OneVsRestClassifier(svm.LinearSVC(random_state=0, verbose=1, max_iter=10000))
-    # start_time = datetime.now()
-    # model.fit(train_x, train_y)
-    # print('\033[32mFinish training SVM. It cost totally {} s.\033[0m'.format((datetime.now() - start_time).total_seconds()))
-
-    # y_pred = model.predict(test_x)
-    # print('\033[32mAccuracy Overall: {}\033[0m'.format(np.sum(test_y.argmax(axis=1) == y_pred.argmax(axis=1)) / test_x.shape[0]))
-    # confusion_matrix(test_y.argmax(axis=1), y_pred.argmax(axis=1))
-
-    # print('Precision:', precision_score(test_y, y_pred, average='micro'))
-    # print('Recall:', recall_score(test_y, y_pred, average='micro'))
-    # print('F1 Score:', f1_score(test_y, y_pred, average='micro'))
-
-    # print(classification_report(test_y, y_pred, digits=4))
-
-    # joblib.dump(model, 'log/LinearSVC.pkl')
 
     train_dataset = ModelNet40_train(
             root='../data/ModelNet40/modelnet40_ply_hdf5_2048/', 
@@ -131,20 +129,46 @@ if __name__ == '__main__':
             normalize=True,
             data_augmentation=False
         )
+    test_dataset = ModelNet40_test(
+        root='../data/ModelNet40/modelnet40_ply_hdf5_2048/',
+        npoints=2048,
+        split='test',
+        normalize=True
+    )
+    
+    # subset_idxs = np.arange(1024)
+    # train_dataset = torch.utils.data.Subset(train_dataset, subset_idxs)
+    # test_dataset = torch.utils.data.Subset(test_dataset, subset_idxs)
 
     train_dataloader = DataLoader(
-        train_dataset[:128], batch_size=16, shuffle=False, num_workers=4
+        train_dataset, batch_size=16, shuffle=False, num_workers=4
+    )
+    test_dataloader = DataLoader(
+        test_dataset, batch_size=16, shuffle=False, num_workers=4
     )
 
     dev, _ = get_available_devices()
 
-    cdws, lbls = get_codewords(
+    cdws_train, lbls_train = get_codewords(
         model_ckpt='lightning_logs/version_0/checkpoints/best_checkpoint.ckpt',
         dataloader=train_dataloader,
         dataset_name='ModelNet40',
         device=dev,
         one_hot=True
     )
+    cdws_test, lbls_test = get_codewords(
+        model_ckpt='lightning_logs/version_0/checkpoints/best_checkpoint.ckpt',
+        dataloader=test_dataloader,
+        dataset_name='ModelNet40',
+        device=dev,
+        one_hot=True
+    )
 
-    print(cdws)
-    print(lbls)
+    _ = classify(
+        classifier="SVM",
+        x_train=cdws_train,
+        y_train=lbls_train,
+        x_test=cdws_test,
+        y_test=lbls_test,
+    )
+
