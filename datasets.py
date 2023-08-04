@@ -261,7 +261,6 @@ class ModelNet40_test(data.Dataset):
         for filename in data_files:
             with h5py.File(filename, 'r') as data_file:
                 pcs = np.array(data_file['data'])
-                
                 # resample current point cloud to take npoints from each
                 pcs = [
                     pc[np.random.choice(len(pc), self.npoints, replace=False), :]
