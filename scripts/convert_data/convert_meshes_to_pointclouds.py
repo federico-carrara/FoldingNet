@@ -1,7 +1,8 @@
 import numpy as np
 import os
 import h5py
-from open3d.io import read_point_cloud
+import logging
+from open3d.io import read_triangle_mesh
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 from typing import Optional, Tuple, List, Literal
@@ -13,6 +14,7 @@ Finally, split data in training, validation and test sets and store them in HDF5
 in the FoldingNet model.
 """
 
+logging.basicConfig(level=logging.WARNING)
 
 #-------------------------------------------------------------------------------------------------
 def _convert_mesh_to_coordinates(
@@ -39,22 +41,22 @@ def _convert_mesh_to_coordinates(
     fname = os.path.basename(file_path)
     f_ext = fname[-3:]
 
-    assert f_ext not in ["ply", "stl", "vtk"], "The file extension should be among those: "".ply"", "".stl"", "".vtk"""
+    assert f_ext in ["ply", "stl", "vtk"], "The file extension should be among those: "".ply"", "".stl"", "".vtk"""
 
     assert sample_n_points > 0, "Cannot sample a negative number of points."
 
-    pc = read_point_cloud(file_path, format=f_ext)
+    mesh = read_triangle_mesh(file_path)
+    pc = np.asarray(mesh.vertices)
 
-    pc = np.asarray(pc.points)
-
-    if len(pc) < sample_n_points:
-        pc = pc[np.random.choice(len(pc), sample_n_points, replace=True), :]
-        raise Warning(f"""\
-            The number of points to sample ({sample_n_points}) is greater than the original number of points ({len(pc)}).
-            Therefore, sampling with replacement is used.
+    pc_size = len(pc)
+    if pc_size < sample_n_points:
+        pc = None
+        logging.warning(f"""\
+The number of points to sample ({sample_n_points}) is greater than the original number of points ({pc_size}).
+Therefore, this mesh will not be converted into pointcloud.
             """)
     else:
-        pc = pc[np.random.choice(len(pc), sample_n_points, replace=False), :]
+        pc = pc[np.random.choice(pc_size, sample_n_points, replace=False), :]
 
     return pc
 #-------------------------------------------------------------------------------------------------
@@ -100,13 +102,20 @@ def create_point_clouds_stack(
 
     point_clouds_stack = np.empty((len(mesh_files), 2048, 3), dtype=np.float32)
     labels_stack = np.empty((len(mesh_files), 1), dtype="|S10")
+    to_remove = []
     for i, mesh_file in tqdm(enumerate(mesh_files), desc="Converting meshes", total=len(mesh_files)):
         pc = _convert_mesh_to_coordinates(
             file_path=os.path.join(mesh_dir_path, mesh_file),
             sample_n_points=n_points
         )
+        if not isinstance(pc, np.ndarray):
+            to_remove.append(i)
+
         point_clouds_stack[i, :, :] = pc
         labels_stack[i, :] = mesh_label
+
+    point_clouds_stack = np.delete(point_clouds_stack, to_remove, axis=0)
+    labels_stack = np.delete(labels_stack, to_remove, axis=0)
 
     return point_clouds_stack, labels_stack
 #-------------------------------------------------------------------------------------------------
@@ -116,7 +125,7 @@ def create_point_clouds_stack(
 #-------------------------------------------------------------------------------------------------
 def split_train_val_test(
         data: np.ndarray,
-        ratios: Optional(List[float]) = [0.8, 0,1, 0.1],
+        ratios: Optional[List[float]] = [0.8, 0,1, 0.1],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Split the input array into training, validation and test sets along its first dimension.
@@ -170,7 +179,7 @@ def _split_in_substacks(
     num_records = input_stack.shape[0]
     substack_lst = []
     start, end = 0, min(substack_size, num_records) 
-    while end <= num_records:
+    while start < num_records:
         substack_lst.append(input_stack[start:end, ...])
         start += substack_size
         end = min(start + substack_size, num_records)
@@ -222,7 +231,7 @@ def save_data(
     )
 
     file_prefix = "data_" + split + "_n"
-    for i in range(len(point_clouds_substack_lst)):
+    for i in tqdm(range(len(point_clouds_substack_lst))):
         file_name = file_prefix + str(i) + ".h5"
         with h5py.File(os.path.join(save_dir, file_name), "w") as f_out:
             f_out.create_dataset(
@@ -249,8 +258,10 @@ def main(
 ) -> None:
     
     # Add data from different samples to global lists
-    all_pcs_lst, all_lbls_lst = []
+    all_pcs_lst, all_lbls_lst = [], []
     for mesh_dir, label in zip(mesh_dirs, labels):
+        print("---------------------------------------------")
+        print(f"Converting meshes in {mesh_dir}...")
         # Convert meshed into point clouds, store them in stacks
         curr_point_clouds_stack, curr_labels_stack = create_point_clouds_stack(
             mesh_dir_path=mesh_dir, 
@@ -276,6 +287,10 @@ def main(
     all_labels_stack_test = all_labels_stack[test_idxs, ...]
 
     # Save the data
+    print("\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    print("Saving data...")
+    print("---------------------------------------------")
+    print("Writing TRAINING set...")
     save_data(
         point_clouds_stack=all_point_clouds_stack_train,
         labels_stack=all_labels_stack_train,
@@ -283,6 +298,8 @@ def main(
         save_dir=path_to_save_dir,
         max_records_per_file=max_records_per_file
     )
+    print("---------------------------------------------")
+    print("Writing VALIDATION set...")
     save_data(
         point_clouds_stack=all_point_clouds_stack_val,
         labels_stack=all_labels_stack_val,
@@ -290,6 +307,8 @@ def main(
         save_dir=path_to_save_dir,
         max_records_per_file=max_records_per_file
     )
+    print("---------------------------------------------")
+    print("Writing TEST set...")
     save_data(
         point_clouds_stack=all_point_clouds_stack_test,
         labels_stack=all_labels_stack_test,
