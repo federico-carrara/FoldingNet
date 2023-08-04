@@ -1,6 +1,5 @@
 import numpy as np
 import os
-import sys
 import h5py
 from open3d.io import read_point_cloud
 from sklearn.model_selection import train_test_split
@@ -48,7 +47,14 @@ def _convert_mesh_to_coordinates(
 
     pc = np.asarray(pc.points)
 
-    pc = pc[np.random.choice(len(pc), sample_n_points, replace=False), :]
+    if len(pc) < sample_n_points:
+        pc = pc[np.random.choice(len(pc), sample_n_points, replace=True), :]
+        raise Warning(f"""\
+            The number of points to sample ({sample_n_points}) is greater than the original number of points ({len(pc)}).
+            Therefore, sampling with replacement is used.
+            """)
+    else:
+        pc = pc[np.random.choice(len(pc), sample_n_points, replace=False), :]
 
     return pc
 #-------------------------------------------------------------------------------------------------
@@ -237,8 +243,8 @@ def main(
     mesh_dirs: List[str],
     labels: List[Literal["cuboidal", "columnar", "squamous", "pseudostratified", "transitional"]],
     split_ratios: List[float],
-    npoints: int,
     path_to_save_dir: str,
+    npoints: Optional[int] = 2048,
     max_records_per_file: Optional[int] = 2048
 ) -> None:
     
@@ -298,16 +304,24 @@ def main(
 
 if __name__=="__main__":
 
-    path_to_mesh_dir = "../data/CellsData/cell_meshes_bladder/"
-    file_names = os.listdir(path_to_mesh_dir)
-    file_paths = [os.path.join(path_to_mesh_dir, file_name) for file_name in file_names]
+    mesh_dirs_lst = [
+        "../data/CellsData/cell_meshes/lung_bronchiole",
+        "../data/CellsData/cell_meshes/intestine_villus",
+        "../data/CellsData/cell_meshes/esophagus",
+        "../data/CellsData/cell_meshes/lung",
+        "../data/CellsData/cell_meshes/bladder"   
+    ]
+    mesh_labels_lst = ["cuboidal", "columnar", "squamous", "pseudostratified", "transitional"]
+    save_dir_path = "../data/CellsData/cell_pointclouds/"
 
-    for fpath in tqdm(file_paths, desc="Converting files: "):
-        convert_mesh_to_coords(
-            file_path=fpath, 
-            label="cuboidal",
-            save_dir="../data/CellsData/point_clouds_bladder",
-        )
+    main(
+        mesh_dirs=mesh_dirs_lst,
+        labels=mesh_labels_lst,
+        split_ratios=[0.8, 0.1, 0.1],
+        path_to_save_dir=save_dir_path,
+        npoints=2048,
+        max_records_per_file=2048
+    )
 
     print("All the files have been successfully converted!")
 #-------------------------------------------------------------------------------------------------
