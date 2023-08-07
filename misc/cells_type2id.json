@@ -1,0 +1,7 @@
+{
+    "cuboidal": 0, 
+    "columnar": 1, 
+    "squamous": 2, 
+    "pseudostratified": 3, 
+    "transitional": 4
+}
