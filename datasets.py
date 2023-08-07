@@ -334,7 +334,7 @@ class ShapeNetCore_train(data.Dataset):
         self.normalize = normalize
         self.data_augmentation = data_augmentation
 
-        with open('misc/shapenetcorecategory2id.json', 'r') as f:
+        with open('misc/shapenetcore_category2id.json', 'r') as f:
             self.cat2id = json.load(f)
         self.id2cat = {v: k for k, v in self.cat2id.items()}
 
@@ -423,7 +423,7 @@ class ShapeNetCore_test(data.Dataset):
         self.split = split
         self.normalize = normalize
 
-        with open('misc/shapenetcorecategory2id.json', 'r') as f:
+        with open('misc/shapenetcore_category2id.json', 'r') as f:
             self.cat2id = json.load(f)
         self.id2cat = {v: k for k, v in self.cat2id.items()}
 
@@ -462,6 +462,180 @@ class ShapeNetCore_test(data.Dataset):
         label = torch.tensor(label)
 
         return point_cloud, label
+
+    def __len__(self):
+        return len(self.point_clouds)
+#---------------------------------------------------------------------------------
+
+
+
+#---------------------------------------------------------------------------------
+class CellsData_train(data.Dataset):
+    '''
+    Dataset module for loading point clouds training data of segmented 3D cells.
+
+    NOTE: Cells data have been converted from meshes to point cloud and then stored 
+    in .hdf5 files. Each of these files contains 2048 numpy arrays of point clouds coordinates 
+    ['point_clouds'] with the associated labels ['labels'].
+    Moreover, files are already split in train, validation and test.
+    '''
+
+    def __init__(
+            self, 
+            root: str, 
+            npoints: Optional[int] = 2048,
+            normalize: Optional[bool] = True, 
+            data_augmentation: Optional[bool] = True
+        ):
+        '''
+        Parameters:
+        -----------
+            root: (str)
+                The path to the root directory in which data are stored.
+
+            npoints: (Optional[int], default = 2048) 
+                The number of points to sample from point clouds data.
+            
+            normalize: (Optional[bool], default = True) 
+                If `True`, point cloud coordinates are normalized and centered around the origin.
+            
+            data_augmentation: (Optional[bool], default = True)
+                If `True`, random rotation and jittering is applied to data.
+        '''
+        
+        self.root = root
+        self.npoints = npoints
+        self.normalize = normalize
+        self.data_augmentation = data_augmentation
+
+        with open('misc/cells_type2id.json', 'r') as f:
+            self.cat2id = json.load(f)
+        self.id2cat = {v: k for k, v in self.cat2id.items()}
+
+        # find all .h5 files
+        data_files = [file_name for file_name in os.listdir(self.root) if 'train' in file_name]
+        data_paths = [os.path.join(self.root, file) for file in data_files]
+
+        # load data from .h5 files
+        point_clouds, labels = [], []
+        for data_path in data_paths:
+            with h5py.File(data_path, 'r') as data_file:
+                point_clouds.append(np.array(data_file['point_clouds']))
+                labels.append(np.array(data_file['labels']).squeeze(1))
+        self.point_clouds = np.concatenate(point_clouds, axis=0)
+        self.labels = np.concatenate(labels, axis=0)
+    
+    def __getitem__(self, index):
+        point_cloud = self.point_clouds[index]
+        label = self.labels[index]
+        label = self.cat2id[label.decode()]
+        classname = [label.decode()]
+
+        # select self.npoints from the original point cloud
+        choice = np.random.choice(len(point_cloud), self.npoints, replace=False)
+        point_cloud = point_cloud[choice, :]
+
+        # normalize into a sphere whose radius is 1
+        if self.normalize:
+            point_cloud = point_cloud - np.mean(point_cloud, axis=0)
+            dist = np.max(np.sqrt(np.sum(point_cloud  ** 2, axis=1)))
+            point_cloud = point_cloud / dist
+
+        # data augmentation - random rotation and random jitter
+        if self.data_augmentation:
+            theta = np.random.uniform(0, np.pi * 2)
+            rotation_matrix = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+            point_cloud[:, [0, 2]] = point_cloud[:, [0, 2]].dot(rotation_matrix)  # random rotation
+            point_cloud += np.random.normal(0, 0.02, size=point_cloud.shape)  # random jitter
+        
+        point_cloud = torch.from_numpy(point_cloud)
+        label = torch.tensor(label)
+
+        return point_cloud, label, classname
+
+    def __len__(self):
+        return len(self.point_clouds)
+#---------------------------------------------------------------------------------
+
+
+
+#---------------------------------------------------------------------------------
+class CellsData_test(data.Dataset):
+    '''
+    Dataset module for loading point clouds validation/test data of segmented 3D cells.
+
+    NOTE: in the validation/test dataset point clouds are not resampled
+    in `__init__` and not in `__getitem__` since we want to have the exact 
+    same data at every iteration.
+    '''
+
+    def __init__(
+            self, 
+            root: str,
+            npoints: Optional[int] = 2048,
+            split: Literal['val', 'test'] = 'val', 
+            normalize: Optional[bool] = True
+        ):
+        '''
+        Parameters:
+        -----------
+            root: (str)
+                The path to the root directory in which data are stored.
+
+            npoints: (Optional[int], default = 2048) 
+                The number of points to sample from point clouds data.
+            
+            split: (Literal['val', 'test'], default = 'val')
+                The split of data to load.
+            
+            normalize: (Optional[bool], default = True) 
+                If `True`, point cloud coordinates are normalized and centered around the origin.
+        '''
+        
+        self.root = root
+        self.npoints = npoints
+        self.split = split
+        self.normalize = normalize
+
+        with open('misc/cells_type2id.json', 'r') as f:
+            self.cat2id = json.load(f)
+        self.id2cat = {v: k for k, v in self.cat2id.items()}
+
+        # find all .h5 files
+        data_files = [file_name for file_name in os.listdir(self.root) if self.split in file_name]
+        data_paths = [os.path.join(self.root, file) for file in data_files]
+
+        # load data from .h5 files
+        point_clouds, labels = [], []
+        for data_path in data_paths:
+            with h5py.File(data_path, 'r') as data_file:
+                pcs = np.array(data_file['point_clouds'])
+                # resample current point cloud to take npoints from each
+                pcs = [
+                    pc[np.random.choice(len(pc), self.npoints, replace=False), :]
+                    for pc in pcs
+                ]
+                point_clouds.append(np.asarray(pcs))
+                labels.append(np.array(data_file['labels']).squeeze(1))
+        self.point_clouds = np.concatenate(point_clouds, axis=0)
+        self.labels = np.concatenate(labels, axis=0)
+    
+    def __getitem__(self, index):
+        point_cloud = self.point_clouds[index]
+        label = self.labels[index]
+        label = self.cat2id[label.decode()]
+        classname = [label.decode()]
+
+        # normalize into a sphere whose radius is 1
+        if self.normalize:
+            point_cloud = point_cloud - np.mean(point_cloud, axis=0)
+            dist = np.max(np.sqrt(np.sum(point_cloud  ** 2, axis=1)))
+            point_cloud = point_cloud / dist
+        
+        point_cloud = torch.from_numpy(point_cloud)
+        label = torch.tensor(label)
+
+        return point_cloud, label, classname
 
     def __len__(self):
         return len(self.point_clouds)
