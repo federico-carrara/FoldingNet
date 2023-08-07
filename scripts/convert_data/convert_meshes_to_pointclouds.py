@@ -101,7 +101,7 @@ def create_point_clouds_stack(
     mesh_files = os.listdir(mesh_dir_path)
 
     point_clouds_stack = np.empty((len(mesh_files), 2048, 3), dtype=np.float32)
-    labels_stack = np.empty((len(mesh_files), 1), dtype="|S10")
+    labels_stack = np.empty((len(mesh_files), 1), dtype="|S20")
     to_remove = []
     for i, mesh_file in tqdm(enumerate(mesh_files), desc="Converting meshes", total=len(mesh_files)):
         pc = _convert_mesh_to_coordinates(
